@@ -21,17 +21,50 @@ export default function SetPasswordPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    // The invite/recovery link puts the session in the URL; the Supabase
-    // client picks it up automatically on load, but that can take a beat —
-    // so check a couple of times before giving up.
-    let attempts = 0;
-    const check = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) { setHasSession(true); setChecking(false); return; }
-      attempts += 1;
-      if (attempts < 6) { setTimeout(check, 500); } else { setChecking(false); }
+    // The invite/recovery link authenticates by putting a token in the URL.
+    // Supabase uses one of two formats depending on settings, and our client
+    // library doesn't auto-consume either one reliably, so we parse the URL
+    // ourselves rather than just waiting on getSession() to pick it up.
+    const establishSession = async () => {
+      // Format 1: newer "PKCE" style link — a ?code=... query param.
+      const code = new URLSearchParams(window.location.search).get("code");
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!error) {
+          window.history.replaceState(null, "", window.location.pathname);
+          setHasSession(true);
+          setChecking(false);
+          return;
+        }
+      }
+
+      // Format 2: classic link — access_token/refresh_token in the URL
+      // fragment (after the #), the format Supabase is sending right now.
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const access_token = hashParams.get("access_token");
+      const refresh_token = hashParams.get("refresh_token");
+      if (access_token && refresh_token) {
+        const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+        if (!error) {
+          window.history.replaceState(null, "", window.location.pathname);
+          setHasSession(true);
+          setChecking(false);
+          return;
+        }
+      }
+
+      // Fallback: maybe a session already exists some other way. Check a
+      // couple of times in case it's still settling.
+      let attempts = 0;
+      const check = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) { setHasSession(true); setChecking(false); return; }
+        attempts += 1;
+        if (attempts < 6) { setTimeout(check, 500); } else { setChecking(false); }
+      };
+      check();
     };
-    check();
+    establishSession();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: React.FormEvent) {
