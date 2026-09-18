@@ -20,9 +20,12 @@ export async function POST(req: Request) {
 
   const admin = supabaseAdmin();
 
-  // Creates the auth user and emails them a secure link to set their own password.
+  // Creates the auth user and emails them a secure link that logs them in and
+  // sends them to /set-password so they can actually choose one — without
+  // this, the invite link would sign them in silently and they'd never get
+  // a password to log back in with later.
   const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/login`,
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || ""}/set-password`,
   });
   if (inviteError || !invited.user) {
     return NextResponse.json({ error: inviteError?.message || "Could not create the account." }, { status: 400 });
