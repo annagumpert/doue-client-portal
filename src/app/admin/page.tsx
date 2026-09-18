@@ -14,6 +14,26 @@ type Req = {
   clients: { name: string } | null;
 };
 
+const STATUS_META: Record<string, { label: string; bg: string; color: string }> = {
+  open: { label: "Open", bg: "var(--surface-2)", color: "var(--ink-2)" },
+  in_progress: { label: "In progress", bg: "#E6F0F8", color: "#3B6EA5" },
+  done: { label: "Done", bg: "var(--good-bg)", color: "var(--good)" },
+};
+const GROUP_COLORS = ["#5F7A63", "#B57A1E", "#6E8AA6", "#B06B7A"];
+const AVATAR_COLORS = ["#5F7A63", "#B57A1E", "#6E8AA6", "#B06B7A", "#7A8C5B"];
+
+function initials(name: string | null | undefined) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+function colorFor(name: string | null | undefined) {
+  if (!name) return AVATAR_COLORS[0];
+  const sum = name.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  return AVATAR_COLORS[sum % AVATAR_COLORS.length];
+}
+
 export default function AdminPage() {
   const supabase = supabaseBrowser();
   const router = useRouter();
@@ -30,6 +50,7 @@ export default function AdminPage() {
   const [commentMap, setCommentMap] = useState<Record<string, Comment[]>>({});
   const [openId, setOpenId] = useState<string | null>(null);
   const [note, setNote] = useState<Record<string, string>>({});
+  const [notesOpenId, setNotesOpenId] = useState<string | null>(null);
 
   async function load() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -119,29 +140,154 @@ export default function AdminPage() {
     router.push("/login");
   }
 
-  const visible = clientFilter === "all" ? requests : requests.filter((r) => r.clients?.name === clientFilter);
+  const teamById: Record<string, string> = {};
+  team.forEach((t) => { teamById[t.id] = t.full_name; });
+
+  const filtered = clientFilter === "all" ? requests : requests.filter((r) => r.clients?.name === clientFilter);
+  const eventRequests = filtered.filter((r) => !!r.event_date);
+  const otherRequests = filtered.filter((r) => !r.event_date);
+
+  function NotesBlock({ requestId }: { requestId: string }) {
+    const comments = commentMap[requestId] || [];
+    const shown = notesOpenId === requestId;
+    return (
+      <div style={{ marginTop: 10 }}>
+        <button type="button" className="btn secondary" onClick={() => setNotesOpenId(shown ? null : requestId)}>
+          {shown ? "Hide notes" : `Notes${comments.length ? ` (${comments.length})` : ""}`}
+        </button>
+        {shown && (
+          <div style={{ marginTop: 8 }}>
+            {comments.map((c) => (
+              <div key={c.id} style={{ padding: "4px 0" }}>
+                <strong>{c.author_label || "Someone"}</strong>{" "}
+                <span className="muted">{new Date(c.created_at).toLocaleString()}</span>
+                <div>{c.body}</div>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <input
+                placeholder="Add a note for the client"
+                value={note[requestId] || ""}
+                onChange={(e) => setNote((n) => ({ ...n, [requestId]: e.target.value }))}
+                style={{ flex: 1 }}
+              />
+              <button type="button" className="btn" onClick={() => addNote(requestId)}>Send</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="shell" style={{ maxWidth: 980 }}>
       <div className="topbar">
-        <div className="brand">Team Dashboard</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Doué Creative" style={{ height: 34, width: "auto" }} />
+          <div className="brand">Team Dashboard</div>
+        </div>
         <button className="btn secondary" onClick={signOut}>Sign out</button>
       </div>
 
       <div className="card">
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-          <strong style={{ flex: 1 }}>Requests</strong>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <strong style={{ flex: 1 }}>Filter</strong>
           <select style={{ width: "auto" }} value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
             <option value="all">All clients</option>
             {clients.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
           </select>
         </div>
+      </div>
+
+      {!!eventRequests.length && (
+        <>
+          <strong style={{ display: "block", margin: "18px 0 8px" }}>Event Requests</strong>
+          {eventRequests.map((r, idx) => {
+            const items = subMap[r.id] || [];
+            const color = GROUP_COLORS[idx % GROUP_COLORS.length];
+            return (
+              <div key={r.id} className="card" style={{ borderLeft: `4px solid ${color}`, paddingLeft: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <strong style={{ color }}>{r.title}</strong>
+                    <span className="muted" style={{ marginLeft: 8 }}>{r.clients?.name}</span>
+                  </div>
+                  <div className="muted">
+                    Requested {new Date(r.created_at).toLocaleDateString()}
+                    {r.event_date ? ` · Event ${r.event_date}` : ""}
+                    {r.launch_date ? ` · Promo launches ${r.launch_date}` : ""}
+                  </div>
+                </div>
+                <table style={{ marginTop: 10 }}>
+                  <thead><tr><th>Project</th><th>Status</th><th>Person</th><th>Due Date</th></tr></thead>
+                  <tbody>
+                    {items.map((it) => {
+                      const meta = STATUS_META[it.status] || STATUS_META.open;
+                      const personName = (it.assigned_to && teamById[it.assigned_to]) || it.owner_label;
+                      return (
+                        <tr key={it.id}>
+                          <td>{it.label}{it.is_takedown && <span className="muted"> (takedown)</span>}</td>
+                          <td>
+                            <select
+                              value={it.status}
+                              onChange={(e) => updateMaterial(it.id, { status: e.target.value })}
+                              style={{ width: "auto", background: meta.bg, color: meta.color, fontWeight: 700, border: "none" }}
+                            >
+                              <option value="open">Open</option>
+                              <option value="in_progress">In progress</option>
+                              <option value="done">Done</option>
+                            </select>
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span
+                                title={personName || "Unassigned"}
+                                style={{
+                                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                  width: 26, height: 26, borderRadius: "50%", background: colorFor(personName),
+                                  color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0,
+                                }}
+                              >
+                                {initials(personName)}
+                              </span>
+                              <select
+                                value={it.assigned_to || ""}
+                                onChange={(e) => updateMaterial(it.id, { assigned_to: e.target.value || null })}
+                                style={{ width: "auto" }}
+                              >
+                                <option value="">{it.owner_label || "Unassigned"}</option>
+                                {team.map((tm) => <option key={tm.id} value={tm.id}>{tm.full_name}</option>)}
+                              </select>
+                            </div>
+                          </td>
+                          <td>
+                            <input
+                              type="date"
+                              value={it.due_date || ""}
+                              onChange={(e) => updateMaterial(it.id, { due_date: e.target.value || null })}
+                              style={{ width: "auto" }}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!items.length && <tr><td colSpan={4} className="muted">No items on this request.</td></tr>}
+                  </tbody>
+                </table>
+                <NotesBlock requestId={r.id} />
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      <strong style={{ display: "block", margin: "18px 0 8px" }}>Other Requests</strong>
+      <div className="card">
         <table>
           <thead><tr><th>Client</th><th>Request</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
           <tbody>
-            {visible.map((r) => {
-              const items = subMap[r.id] || [];
-              const comments = commentMap[r.id] || [];
+            {otherRequests.map((r) => {
               const isOpen = openId === r.id;
               return (
                 <Fragment key={r.id}>
@@ -151,9 +297,8 @@ export default function AdminPage() {
                       {r.title}
                       {r.priority === "high" && <span className="pill high" style={{ marginLeft: 6 }}>Urgent</span>}
                       {r.owner_label && !r.assigned_to && <div className="muted">Owner: {r.owner_label} (no login yet)</div>}
-                      {r.event_date && <div className="muted">Event {r.event_date}{r.launch_date ? ` · promo launches ${r.launch_date}` : ""}</div>}
                       {r.details && <div className="muted">{r.details}</div>}
-                      {!!items.length && <div className="muted">{items.length} item{items.length > 1 ? "s" : ""} · {items.filter((i) => i.status === "done").length} done</div>}
+                      <div className="muted">Requested {new Date(r.created_at).toLocaleDateString()}</div>
                     </td>
                     <td>
                       <select value={r.assigned_to || ""} onChange={(e) => updateRequest(r.id, { assigned_to: e.target.value || null })}>
@@ -177,53 +322,14 @@ export default function AdminPage() {
                   {isOpen && (
                     <tr>
                       <td colSpan={5}>
-                        {!!items.length && (
-                          <div style={{ marginBottom: 10 }}>
-                            <div className="muted" style={{ marginBottom: 4 }}>Items on this request:</div>
-                            {items.map((it) => (
-                              <div key={it.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: "1px solid #eee" }}>
-                                <span>
-                                  {it.label}
-                                  {it.owner_label ? ` — ${it.owner_label}` : ""}
-                                  {it.due_date ? <span className="muted"> · due {it.due_date}</span> : ""}
-                                </span>
-                                <select value={it.status} onChange={(e) => updateMaterial(it.id, { status: e.target.value })} style={{ width: "auto" }}>
-                                  <option value="open">Open</option>
-                                  <option value="in_progress">In progress</option>
-                                  <option value="done">Done</option>
-                                </select>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {!!comments.length && (
-                          <div style={{ marginBottom: 10 }}>
-                            <div className="muted" style={{ marginBottom: 4 }}>Notes:</div>
-                            {comments.map((c) => (
-                              <div key={c.id} style={{ padding: "4px 0" }}>
-                                <strong>{c.author_label || "Someone"}</strong>{" "}
-                                <span className="muted">{new Date(c.created_at).toLocaleString()}</span>
-                                <div>{c.body}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <input
-                            placeholder="Add a note for the client"
-                            value={note[r.id] || ""}
-                            onChange={(e) => setNote((n) => ({ ...n, [r.id]: e.target.value }))}
-                            style={{ flex: 1 }}
-                          />
-                          <button type="button" className="btn" onClick={() => addNote(r.id)}>Send</button>
-                        </div>
+                        <NotesBlock requestId={r.id} />
                       </td>
                     </tr>
                   )}
                 </Fragment>
               );
             })}
-            {!visible.length && <tr><td colSpan={5} className="muted">Nothing here.</td></tr>}
+            {!otherRequests.length && <tr><td colSpan={5} className="muted">Nothing here.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -250,7 +356,7 @@ export default function AdminPage() {
         <p className="muted">
           In Supabase: Authentication → Users → Add user, then copy their UID into a new row in
           Table Editor → profiles, with role = team and client_id left blank. Once that's done they'll
-          show up in the "Assigned" dropdown above and start receiving their own notification emails.
+          show up in the "Assigned" and "Person" dropdowns above and start receiving their own notification emails.
         </p>
       </div>
     </div>

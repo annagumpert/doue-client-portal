@@ -28,7 +28,11 @@ export default function LoginPage() {
 
   return (
     <div className="shell" style={{ maxWidth: 380, paddingTop: 64 }}>
-      <div className="brand" style={{ marginBottom: 20 }}>Doué Creative Portal</div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 20 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="Doué Creative" style={{ height: 64, width: "auto", marginBottom: 8 }} />
+        <div className="brand">Client Portal</div>
+      </div>
       <form className="card" onSubmit={handleSubmit}>
         <label htmlFor="email">Email</label>
         <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />

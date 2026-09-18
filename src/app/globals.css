@@ -1,11 +1,11 @@
 :root {
-  --bg: #F4F5F0;
+  --bg: #F6F5F0;
   --surface: #FFFFFF;
-  --surface-2: #EAEDE3;
-  --border: #D7DCCD;
-  --ink: #17211A;
-  --ink-2: #5B6455;
-  --brand: #14503F;
+  --surface-2: #ECEEE4;
+  --border: #D8DCCD;
+  --ink: #20261F;
+  --ink-2: #5C6355;
+  --brand: #5F7A63;
   --brand-ink: #FFFFFF;
   --accent: #B57A1E;
   --good: #2F8F5B; --good-bg: #E3F3EA;

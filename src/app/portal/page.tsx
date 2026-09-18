@@ -188,7 +188,11 @@ export default function PortalPage() {
   return (
     <div className="shell">
       <div className="topbar">
-        <div className="brand">{clientName || "Your"} Portal</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Doué Creative" style={{ height: 34, width: "auto" }} />
+          <div className="brand">{clientName || "Your"} Portal</div>
+        </div>
         <button className="btn secondary" onClick={signOut}>Sign out</button>
       </div>
 
